@@ -1,4 +1,6 @@
 .git/**
 .gitignore
+.env
+Makefile
 *.vsix
 node_modules/**
