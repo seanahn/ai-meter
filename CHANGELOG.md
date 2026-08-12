@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Status bar: plain text segments (no chip caps) — `4.7h 100% 5.3d 99% fable 99%`.
+
 ## 0.1.3
 
 - Status bar chips: countdown and model rendered with solid half-block caps (▐4.7h▌) instead of brackets.

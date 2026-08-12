@@ -114,11 +114,6 @@ function fmtResetTime(limit) {
   }
 }
 
-/** Chip/card look for status bar text: solid half-block caps, e.g. ▐4.7h▌ */
-function chip(s) {
-  return '▐' + s + '▌';
-}
-
 function tankBar(remaining) {
   const cells = 10;
   const filled = Math.round(Math.max(0, Math.min(100, remaining)) / 100 * cells);
@@ -166,10 +161,10 @@ function activate(context) {
       const eta = fmtEta(l.resetsAt);
       if (l.kind === 'weekly_scoped' && weeklyAll && sameReset(l, weeklyAll)) {
         // Model-scoped weekly resets together with the overall weekly —
-        // skip the duplicate countdown card, show just the model chip.
-        segs.push(chip((l.model || l.kind).toLowerCase()) + ' ' + pct + '%');
+        // skip the duplicate countdown, show just the model name.
+        segs.push((l.model || l.kind).toLowerCase() + ' ' + pct + '%');
       } else {
-        segs.push(chip(eta || labelFor(l)) + ' ' + pct + '%');
+        segs.push((eta || labelFor(l)) + ' ' + pct + '%');
       }
     }
     item.text = '$(dashboard) ' + segs.join(' ');
