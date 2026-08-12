@@ -169,20 +169,19 @@ function activate(context) {
     }
 
     const md = new vscode.MarkdownString();
-    md.appendMarkdown('**Claude usage** — ' + (showRemaining ? 'percent remaining' : 'percent used') + '\n\n');
+    md.appendMarkdown('**Claude usage** — ' + (showRemaining ? 'percent remaining' : 'percent used') + '  \n');
     const rows = shown.map(l => {
       const remaining = Math.max(0, 100 - (l.percent || 0));
-      const name = l.kind === 'session' ? '5-hour session'
-        : l.kind === 'weekly_all' ? 'Weekly (all models)'
-        : 'Weekly (' + (l.model || 'model') + ')';
+      const name = l.kind === 'session' ? '5h session'
+        : l.kind === 'weekly_all' ? 'Weekly'
+        : 'Weekly ' + (l.model || 'model');
       const dot = remaining < 10 ? '🔴' : remaining < 25 ? '🟡' : '🟢';
-      return dot + ' ' + name + '\n\n' +
-        '&nbsp;&nbsp;&nbsp;&nbsp;`' + tankBar(remaining) + '` ' + remaining + '% left · resets ' + fmtResetTime(l) +
+      return dot + ' `' + tankBar(remaining) + '` **' + name + '** ' + remaining + '% · resets ' + fmtResetTime(l) +
         (fmtEta(l.resetsAt) ? ' (' + fmtEta(l.resetsAt) + ')' : '');
     });
-    md.appendMarkdown(rows.join('\n\n'));
+    md.appendMarkdown(rows.join('  \n'));
     if (fetchedAt) {
-      md.appendMarkdown('\n\n---\n\n_Updated ' + new Date(fetchedAt).toLocaleTimeString() + ' · click to refresh_');
+      md.appendMarkdown('  \n_Updated ' + new Date(fetchedAt).toLocaleTimeString() + ' · click to refresh_');
     }
     item.tooltip = md;
     item.show();

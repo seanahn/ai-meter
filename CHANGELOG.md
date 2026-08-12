@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Compact tooltip: one line per limit, tighter line spacing.
+
 ## 0.1.0
 
 - Initial release, extracted from the fennets console extension.
