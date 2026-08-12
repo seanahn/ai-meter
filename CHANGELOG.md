@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Status bar chips: countdown and model rendered with solid half-block caps (▐4.7h▌) instead of brackets.
+
 ## 0.1.2
 
 - Status bar: reset countdown rendered as a leading `[4.7h]` / `[5.3d]` card per limit; model-scoped weekly no longer repeats the weekly countdown.

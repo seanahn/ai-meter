@@ -2,7 +2,7 @@
   "name": "ai-meter",
   "displayName": "AI Meter",
   "description": "Claude subscription usage — 5-hour session and weekly limits — as a live gauge in the status bar.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "seanahn",
   "license": "MIT",
   "repository": {
