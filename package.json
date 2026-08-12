@@ -1,0 +1,81 @@
+{
+  "name": "ai-meter",
+  "displayName": "AI Meter",
+  "description": "Claude subscription usage — 5-hour session and weekly limits — as a live gauge in the status bar.",
+  "version": "0.1.0",
+  "publisher": "seanahn",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seanahn/ai-meter"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "anthropic",
+    "usage",
+    "quota",
+    "rate limit"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiMeter.refresh",
+        "title": "AI Meter: Refresh Usage"
+      }
+    ],
+    "configuration": {
+      "title": "AI Meter",
+      "properties": {
+        "aiMeter.pollMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "How often to poll the usage API, in minutes."
+        },
+        "aiMeter.display": {
+          "type": "string",
+          "enum": [
+            "remaining",
+            "used"
+          ],
+          "default": "remaining",
+          "description": "Show percent remaining (fuel-tank style) or percent used."
+        },
+        "aiMeter.showModelWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also show the model-scoped weekly limit (e.g. Opus/Sonnet) when the API reports one."
+        },
+        "aiMeter.warnBelow": {
+          "type": "number",
+          "default": 25,
+          "description": "Highlight the status bar item (warning color) when any limit has less than this percent remaining."
+        },
+        "aiMeter.errorBelow": {
+          "type": "number",
+          "default": 10,
+          "description": "Highlight the status bar item (error color) when any limit has less than this percent remaining."
+        },
+        "aiMeter.hideWhenUnavailable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the status bar item entirely when no Claude credentials are found (instead of showing a dash)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  }
+}
