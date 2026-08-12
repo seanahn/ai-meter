@@ -149,6 +149,9 @@ function activate(context) {
     const showRemaining = c.get('display') !== 'used';
     const shown = limits.filter(l => showModel || l.kind !== 'weekly_scoped');
 
+    const weeklyAll = shown.find(l => l.kind === 'weekly_all');
+    const sameReset = (a, b) =>
+      Math.abs(new Date(a.resetsAt).getTime() - new Date(b.resetsAt).getTime()) < 60000;
     const segs = [];
     let minRemaining = 100;
     for (const l of shown) {
@@ -156,9 +159,15 @@ function activate(context) {
       minRemaining = Math.min(minRemaining, remaining);
       const pct = showRemaining ? remaining : Math.round(l.percent || 0);
       const eta = fmtEta(l.resetsAt);
-      segs.push(labelFor(l) + ' ' + pct + '%' + (eta ? ' ' + eta : ''));
+      if (l.kind === 'weekly_scoped' && weeklyAll && sameReset(l, weeklyAll)) {
+        // Model-scoped weekly resets together with the overall weekly —
+        // skip the duplicate countdown card, show just "fable 99%".
+        segs.push((l.model || l.kind).toLowerCase() + ' ' + pct + '%');
+      } else {
+        segs.push('[' + (eta || labelFor(l)) + '] ' + pct + '%');
+      }
     }
-    item.text = '$(dashboard) ' + segs.join(' · ');
+    item.text = '$(dashboard) ' + segs.join(' ');
 
     if (minRemaining < c.get('errorBelow')) {
       item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');

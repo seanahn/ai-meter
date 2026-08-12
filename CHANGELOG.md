@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Status bar: reset countdown rendered as a leading `[4.7h]` / `[5.3d]` card per limit; model-scoped weekly no longer repeats the weekly countdown.
+
 ## 0.1.1
 
 - Compact tooltip: one line per limit, tighter line spacing.
