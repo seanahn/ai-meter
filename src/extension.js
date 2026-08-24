@@ -206,9 +206,12 @@ function activate(context) {
         context.globalState.update(CACHE_KEY, fresh);
         context.globalState.update(CACHE_KEY + '.at', fetchedAt);
         if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
-      } else if (!limits && !retryTimer && err !== 'no-credentials' && err !== 'token-expired') {
-        // Nothing cached yet and the failure is transient — retry fast until
-        // the first success, then fall back to the regular poll interval.
+      } else if (!limits && !retryTimer) {
+        // Nothing cached yet — retry fast until the first success, then fall
+        // back to the regular poll interval. Credential errors are included:
+        // they are cheap to retry (no HTTP request is made), and this covers
+        // the race where `claude auth login` rewrites the credentials file
+        // moments after the extension's startup poll.
         retryTimer = setInterval(poll, POLL_RETRY_MS);
       }
       render();
@@ -218,9 +221,21 @@ function activate(context) {
   render(); // show cached data immediately on reload
   poll();
 
+  // Re-poll as soon as the credentials file changes, so a `claude auth
+  // logout`/`login` cycle recovers instantly instead of waiting out a timer.
+  let credWatcher = null;
+  let credDebounce = null;
+  try {
+    credWatcher = fs.watch(path.join(os.homedir(), '.claude'), (_event, filename) => {
+      if (filename && filename !== '.credentials.json') return;
+      clearTimeout(credDebounce);
+      credDebounce = setTimeout(poll, 1000); // debounce: login writes the file more than once
+    });
+  } catch (_) { /* ~/.claude missing (or fs.watch unsupported) — polling still covers it */ }
+
   let pollTimer = setInterval(poll, cfg().get('pollMinutes') * 60000);
   context.subscriptions.push(
-    { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); } },
+    { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); clearTimeout(credDebounce); if (credWatcher) credWatcher.close(); } },
     vscode.commands.registerCommand('aiMeter.refresh', poll),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('aiMeter')) return;

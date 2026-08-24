@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Recover automatically after `claude` login: the fast startup retry now also covers missing/expired credentials (cheap — no HTTP request is made without a token), and a watcher on `~/.claude/.credentials.json` triggers an immediate re-poll when the file changes.
+
 ## 0.1.4
 
 - Status bar: plain text segments (no chip caps) — `4.7h 100% 5.3d 99% fable 99%`.
