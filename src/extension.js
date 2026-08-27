@@ -1,8 +1,13 @@
-// AI Meter — Claude subscription usage in the VS Code status bar.
+// AI Meter — Claude usage in the VS Code status bar.
 //
-// Data source: the Claude Code OAuth token (~/.claude/.credentials.json, or
-// the macOS Keychain), used to call GET api.anthropic.com/api/oauth/usage.
-// Nothing else is read and no data leaves the machine except that one request.
+// Two modes:
+//  - subscription: the Claude Code OAuth token (~/.claude/.credentials.json, or
+//    the macOS Keychain) is used to call GET api.anthropic.com/api/oauth/usage.
+//    Nothing else is read and no data leaves the machine except that one request.
+//  - cost: session tokens and estimated spend, computed locally from the
+//    Claude Code transcripts under ~/.claude/projects/. Nothing leaves the
+//    machine at all. Auto-selected when Claude Code is configured for Bedrock
+//    (CLAUDE_CODE_USE_BEDROCK), where there are no subscription limits to show.
 
 const vscode = require('vscode');
 const fs = require('fs');
@@ -13,6 +18,7 @@ const { execFileSync } = require('child_process');
 
 const CACHE_KEY = 'aiMeter.limits';
 const POLL_RETRY_MS = 15000; // fast retry until the first successful fetch
+const SESSION_MS = 5 * 3600000; // "session" = the last 5 hours, matching Claude's session window
 
 /** Read the Claude Code OAuth credentials. Returns {accessToken, expiresAt} or null. */
 function readCredentials() {
@@ -88,6 +94,182 @@ function fetchUsage(cb) {
   req.on('timeout', () => { req.destroy(); });
 }
 
+// ---------------------------------------------------------------------------
+// Cost mode — parse Claude Code transcripts and price the token usage.
+
+/** True when Claude Code is configured to use Amazon Bedrock. */
+function bedrockConfigured() {
+  let v = process.env.CLAUDE_CODE_USE_BEDROCK;
+  if (v === undefined) {
+    for (const f of ['settings.json', 'settings.local.json']) {
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', f), 'utf8'));
+        if (j && j.env && j.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
+          v = String(j.env.CLAUDE_CODE_USE_BEDROCK);
+          break;
+        }
+      } catch (_) { /* missing or unparsable settings file */ }
+    }
+  }
+  return !!v && v !== '0' && v !== 'false';
+}
+
+// Anthropic list prices, $/MTok [input, output]. Cache write bills at input
+// ×1.25 (5m TTL) or ×2 (1h TTL); cache read at input ×0.1. Bedrock model ids
+// carry prefixes (us.anthropic.claude-...), so match by substring. First
+// match wins — order specific patterns before generic ones.
+const PRICES = [
+  [/fable|mythos/, [10, 50]],
+  [/haiku-4/, [1, 5]],
+  [/haiku-3-5/, [0.8, 4]],
+  [/haiku/, [0.25, 1.25]],
+  [/opus-4-[01]-|opus-3/, [15, 75]],
+  [/opus/, [5, 25]],
+  [/sonnet/, [3, 15]],
+];
+
+function priceFor(model) {
+  for (const [re, p] of PRICES) if (re.test(model)) return p;
+  return null;
+}
+
+/** Estimated $ cost of one usage record ({input, output, cacheRead, cacheW5, cacheW1}). */
+function recordCost(model, r) {
+  const p = priceFor(model);
+  if (!p) return 0;
+  const [inP, outP] = p;
+  return (r.input * inP + r.output * outP + r.cacheRead * inP * 0.1 +
+    r.cacheW5 * inP * 1.25 + r.cacheW1 * inP * 2) / 1e6;
+}
+
+/** Parse one transcript JSONL line into a usage record, or null. */
+function parseUsageLine(line) {
+  if (line.indexOf('"usage"') === -1) return null;
+  let e;
+  try { e = JSON.parse(line); } catch (_) { return null; }
+  if (!e || e.type !== 'assistant' || !e.message) return null;
+  const m = e.message, u = m.usage;
+  if (!u || !m.id) return null;
+  const cc = u.cache_creation || {};
+  const w1 = cc.ephemeral_1h_input_tokens || 0;
+  const r = {
+    id: m.id,
+    ts: new Date(e.timestamp).getTime(),
+    model: m.model || 'unknown',
+    input: u.input_tokens || 0,
+    output: u.output_tokens || 0,
+    cacheRead: u.cache_read_input_tokens || 0,
+    // without a TTL breakdown, assume the cheaper 5m write rate
+    cacheW5: Math.max(0, (u.cache_creation_input_tokens || 0) - w1),
+    cacheW1: w1,
+  };
+  if (!(r.ts > 0)) return null;
+  if (r.input + r.output + r.cacheRead + r.cacheW5 + r.cacheW1 === 0) return null; // synthetic entries
+  return r;
+}
+
+// Transcript files are append-only JSONL; remember how far each was parsed so
+// each poll only reads the appended bytes. One message produces one line per
+// content block, all sharing message.id with identical usage — dedupe on id.
+const fileCache = new Map(); // path -> {offset, tail, records}
+
+function readAppended(fp, c, size) {
+  const fd = fs.openSync(fp, 'r');
+  try {
+    const buf = Buffer.alloc(size - c.offset);
+    fs.readSync(fd, buf, 0, buf.length, c.offset);
+    c.offset = size;
+    const lines = (c.tail + buf.toString('utf8')).split('\n');
+    c.tail = lines.pop();
+    const ids = new Set(c.records.map(r => r.id));
+    for (const line of lines) {
+      const r = parseUsageLine(line);
+      if (r && !ids.has(r.id)) { ids.add(r.id); c.records.push(r); }
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** All usage records at or after cutoffMs, across every project transcript. */
+function collectRecords(cutoffMs) {
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  const files = new Set();
+  let projects;
+  try { projects = fs.readdirSync(root); } catch (_) { return []; }
+  for (const proj of projects) {
+    let names;
+    try { names = fs.readdirSync(path.join(root, proj)); } catch (_) { continue; }
+    for (const n of names) {
+      if (!n.endsWith('.jsonl')) continue;
+      const fp = path.join(root, proj, n);
+      let st;
+      try { st = fs.statSync(fp); } catch (_) { continue; }
+      if (st.mtimeMs < cutoffMs) continue;
+      files.add(fp);
+      let c = fileCache.get(fp);
+      if (!c || st.size < c.offset) c = { offset: 0, tail: '', records: [] };
+      try {
+        if (st.size > c.offset) readAppended(fp, c, st.size);
+      } catch (_) { /* transient read error — retry next poll */ }
+      c.records = c.records.filter(r => r.ts >= cutoffMs);
+      fileCache.set(fp, c);
+    }
+  }
+  for (const fp of fileCache.keys()) if (!files.has(fp)) fileCache.delete(fp);
+  const seen = new Set(), out = [];
+  for (const fp of files) {
+    for (const r of fileCache.get(fp).records) {
+      if (!seen.has(r.id)) { seen.add(r.id); out.push(r); }
+    }
+  }
+  return out;
+}
+
+/** Token totals and estimated cost for the 5h session and the current day. */
+function computeCostStats() {
+  const now = Date.now();
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const dayStart = midnight.getTime();
+  const sessionStart = now - SESSION_MS;
+  const stats = {
+    session: { tokens: 0, cost: 0 },
+    today: { tokens: 0, cost: 0 },
+    models: new Map(), // model -> {input, output, cacheRead, cacheWrite, cost, unpriced}
+  };
+  for (const r of collectRecords(Math.min(dayStart, sessionStart))) {
+    const cost = recordCost(r.model, r);
+    const tokens = r.input + r.output + r.cacheRead + r.cacheW5 + r.cacheW1;
+    if (r.ts >= sessionStart) { stats.session.tokens += tokens; stats.session.cost += cost; }
+    if (r.ts >= dayStart) {
+      stats.today.tokens += tokens;
+      stats.today.cost += cost;
+      let m = stats.models.get(r.model);
+      if (!m) stats.models.set(r.model, m = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, unpriced: !priceFor(r.model) });
+      m.input += r.input;
+      m.output += r.output;
+      m.cacheRead += r.cacheRead;
+      m.cacheWrite += r.cacheW5 + r.cacheW1;
+      m.cost += cost;
+    }
+  }
+  return stats;
+}
+
+function fmtTok(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+  return String(n);
+}
+
+function fmtUsd(n) {
+  return '$' + (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
+}
+
+// ---------------------------------------------------------------------------
+
 function labelFor(limit) {
   if (limit.kind === 'session') return '5h';
   if (limit.kind === 'weekly_all') return 'wk';
@@ -128,17 +310,61 @@ function activate(context) {
   let limits = context.globalState.get(CACHE_KEY) || null;
   let lastError = null;
   let fetchedAt = context.globalState.get(CACHE_KEY + '.at') || null;
+  let costStats = null;
+  let activeMode = 'subscription';
 
   function cfg() { return vscode.workspace.getConfiguration('aiMeter'); }
 
+  function resolveMode() {
+    const m = cfg().get('mode') || 'auto';
+    if (m === 'auto') return bedrockConfigured() ? 'cost' : 'subscription';
+    return m;
+  }
+
+  function renderCost() {
+    if (!costStats) {
+      item.text = '$(dashboard) —';
+      item.backgroundColor = undefined;
+      item.tooltip = 'AI Meter: cost mode — no data yet. Click to refresh.';
+      item.show();
+      return;
+    }
+    const s = costStats;
+    item.text = '$(dashboard) 5h ' + fmtTok(s.session.tokens) + ' ' + fmtUsd(s.session.cost) +
+      ' day ' + fmtTok(s.today.tokens) + ' ' + fmtUsd(s.today.cost);
+    item.backgroundColor = undefined;
+
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown('**Claude cost** — estimated from local transcripts  \n');
+    md.appendMarkdown('**Session (5h)** ' + fmtTok(s.session.tokens) + ' tokens · ≈' + fmtUsd(s.session.cost) + '  \n');
+    md.appendMarkdown('**Today** ' + fmtTok(s.today.tokens) + ' tokens · ≈' + fmtUsd(s.today.cost) + '  \n');
+    if (s.models.size > 0) {
+      md.appendMarkdown('\n');
+      const rows = [...s.models.entries()].sort((a, b) => b[1].cost - a[1].cost);
+      for (const [model, m] of rows) {
+        md.appendMarkdown('`' + model + '` in ' + fmtTok(m.input) + ' · out ' + fmtTok(m.output) +
+          ' · cache r ' + fmtTok(m.cacheRead) + ' w ' + fmtTok(m.cacheWrite) +
+          ' · ' + (m.unpriced ? 'no price data' : '≈' + fmtUsd(m.cost)) + '  \n');
+      }
+    } else {
+      md.appendMarkdown('\nNo Claude Code activity today (`~/.claude/projects`).  \n');
+    }
+    md.appendMarkdown('\n_Priced at Anthropic list rates — Bedrock/partner billing may differ. ');
+    if (fetchedAt) md.appendMarkdown('Updated ' + new Date(fetchedAt).toLocaleTimeString() + ' · ');
+    md.appendMarkdown('click to refresh_');
+    item.tooltip = md;
+    item.show();
+  }
+
   function render() {
+    if (activeMode === 'cost') { renderCost(); return; }
     const c = cfg();
     if (!limits) {
       if (lastError === 'no-credentials' && c.get('hideWhenUnavailable')) { item.hide(); return; }
       item.text = '$(dashboard) —';
       item.backgroundColor = undefined;
       item.tooltip = new vscode.MarkdownString(
-        lastError === 'no-credentials' ? 'AI Meter: no Claude credentials found (`~/.claude/.credentials.json`). Log in with Claude Code first.'
+        lastError === 'no-credentials' ? 'AI Meter: no Claude credentials found (`~/.claude/.credentials.json`). Log in with Claude Code first. (Using Bedrock? Set `aiMeter.mode` to `cost`.)'
         : lastError === 'token-expired' ? 'AI Meter: Claude OAuth token expired — run Claude Code once to refresh it.'
         : 'AI Meter: usage unavailable' + (lastError ? ' (' + lastError + ')' : '') + '. Click to retry.');
       item.show();
@@ -198,6 +424,19 @@ function activate(context) {
 
   let retryTimer = null;
   function poll() {
+    activeMode = resolveMode();
+    if (activeMode === 'cost') {
+      try {
+        costStats = computeCostStats();
+        fetchedAt = Date.now();
+        lastError = null;
+      } catch (_) {
+        lastError = 'cost-scan';
+      }
+      if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+      render();
+      return;
+    }
     fetchUsage((fresh, err) => {
       lastError = err;
       if (fresh) {
@@ -241,7 +480,7 @@ function activate(context) {
       if (!e.affectsConfiguration('aiMeter')) return;
       clearInterval(pollTimer);
       pollTimer = setInterval(poll, cfg().get('pollMinutes') * 60000);
-      render();
+      poll(); // mode may have changed
     }),
   );
 }

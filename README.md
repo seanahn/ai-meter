@@ -16,14 +16,28 @@ AI Meter reuses the OAuth token that [Claude Code](https://claude.com/claude-cod
 - The token is read locally and sent only to `api.anthropic.com`. Nothing else is collected or transmitted.
 - If no credentials are found (or the token expired), the item shows `—` with an explanatory tooltip. Run Claude Code once to log in / refresh.
 
+## Cost mode (Bedrock / API key)
+
+Bedrock and API-key setups have no subscription quota, so there is nothing for the usage endpoint to report. For those, AI Meter switches to **cost mode**: it reads the Claude Code transcripts under `~/.claude/projects/` locally and shows session (last 5h) and today token totals with an estimated cost, priced at Anthropic list rates (input/output plus cache write/read). Hover for a per-model breakdown.
+
+```
+⊞ 5h 1.2M $4.31 day 5.2M $18.9
+```
+
+- Auto-selected when Claude Code is configured for Bedrock (`CLAUDE_CODE_USE_BEDROCK` in the environment or in `~/.claude/settings.json`'s `env` block); force it with `aiMeter.mode: "cost"`.
+- Everything stays on the machine — cost mode makes no network requests.
+- The figure is an estimate at Anthropic list prices; actual Bedrock/partner billing may differ.
+
 ## Requirements
 
-- Claude Code logged in with a Claude subscription (Pro / Max / Team). API-key-only and Bedrock/Vertex setups have no subscription quota to report.
+- Subscription mode: Claude Code logged in with a Claude subscription (Pro / Max / Team).
+- Cost mode: Claude Code transcripts under `~/.claude/projects/` (written automatically as you use Claude Code).
 
 ## Settings
 
 | Setting | Default | Description |
 |---|---|---|
+| `aiMeter.mode` | `auto` | `subscription` (OAuth usage API), `cost` (local transcript estimate), or `auto` (cost when Bedrock is configured). |
 | `aiMeter.pollMinutes` | `5` | Poll interval in minutes. |
 | `aiMeter.display` | `remaining` | Show percent remaining (fuel-tank style) or percent `used`. |
 | `aiMeter.showModelWeekly` | `true` | Also show the model-scoped weekly limit (e.g. Opus) when reported. |
