@@ -321,9 +321,17 @@ function tankBar(remaining) {
 }
 
 function activate(context) {
-  const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  // Explicit id + name: keeps the entry's identity stable across extension
+  // host restarts and names it in the status bar context menu.
+  const item = vscode.window.createStatusBarItem('aiMeter.usage', vscode.StatusBarAlignment.Right, 100);
+  item.name = 'AI Meter';
   item.command = 'aiMeter.refresh';
-  context.subscriptions.push(item);
+  const out = vscode.window.createOutputChannel('AI Meter');
+  context.subscriptions.push(item, out);
+  const log = msg => out.appendLine(new Date().toLocaleTimeString() + ' ' + msg);
+  let visible = false; // what render() last decided, so re-shows never override a hide()
+  const show = () => { visible = true; item.show(); };
+  const hide = () => { visible = false; item.hide(); };
 
   let limits = context.globalState.get(CACHE_KEY) || null;
   let lastError = null;
@@ -344,12 +352,13 @@ function activate(context) {
       item.text = '$(dashboard) —';
       item.backgroundColor = undefined;
       item.tooltip = 'AI Meter: cost mode — no data yet. Click to refresh.';
-      item.show();
+      show();
       return;
     }
     const s = costStats;
     item.text = '$(dashboard) ' + (s.latestModel ? shortModel(s.latestModel) + ' ' : '') +
       fmtTok(s.today.tokens) + ' ' + fmtUsd(s.today.cost);
+    log('render cost: ' + item.text);
     item.backgroundColor = undefined;
 
     const md = new vscode.MarkdownString();
@@ -379,21 +388,21 @@ function activate(context) {
     if (fetchedAt) md.appendMarkdown('Updated ' + new Date(fetchedAt).toLocaleTimeString() + ' · ');
     md.appendMarkdown('click to refresh_');
     item.tooltip = md;
-    item.show();
+    show();
   }
 
   function render() {
     if (activeMode === 'cost') { renderCost(); return; }
     const c = cfg();
     if (!limits) {
-      if (lastError === 'no-credentials' && c.get('hideWhenUnavailable')) { item.hide(); return; }
+      if (lastError === 'no-credentials' && c.get('hideWhenUnavailable')) { hide(); return; }
       item.text = '$(dashboard) —';
       item.backgroundColor = undefined;
       item.tooltip = new vscode.MarkdownString(
         lastError === 'no-credentials' ? 'AI Meter: no Claude credentials found (`~/.claude/.credentials.json`). Log in with Claude Code first. (Using Bedrock? Set `aiMeter.mode` to `cost`.)'
         : lastError === 'token-expired' ? 'AI Meter: Claude OAuth token expired — run Claude Code once to refresh it.'
         : 'AI Meter: usage unavailable' + (lastError ? ' (' + lastError + ')' : '') + '. Click to retry.');
-      item.show();
+      show();
       return;
     }
 
@@ -420,6 +429,7 @@ function activate(context) {
       }
     }
     item.text = '$(dashboard) ' + segs.join(' ');
+    log('render subscription: ' + item.text);
 
     if (minRemaining < c.get('errorBelow')) {
       item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
@@ -445,12 +455,13 @@ function activate(context) {
       md.appendMarkdown('  \n_Updated ' + new Date(fetchedAt).toLocaleTimeString() + ' · click to refresh_');
     }
     item.tooltip = md;
-    item.show();
+    show();
   }
 
   let retryTimer = null;
   function poll() {
     activeMode = resolveMode();
+    log('poll (mode ' + activeMode + ')');
     if (activeMode === 'cost') {
       try {
         costStats = computeCostStats();
@@ -483,8 +494,14 @@ function activate(context) {
     });
   }
 
+  log('activated');
   render(); // show cached data immediately on reload
   poll();
+
+  // Re-assert visibility a few times after activation. When the extension
+  // host starts during a Remote-SSH reconnect, the first show() can be lost by
+  // the window and the item stays invisible until the next poll.
+  const reshowTimers = [2000, 10000, 60000].map(ms => setTimeout(() => { if (visible) item.show(); }, ms));
 
   // Re-poll as soon as the credentials file changes, so a `claude auth
   // logout`/`login` cycle recovers instantly instead of waiting out a timer.
@@ -500,7 +517,7 @@ function activate(context) {
 
   let pollTimer = setInterval(poll, cfg().get('pollMinutes') * 60000);
   context.subscriptions.push(
-    { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); clearTimeout(credDebounce); if (credWatcher) credWatcher.close(); } },
+    { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); clearTimeout(credDebounce); reshowTimers.forEach(clearTimeout); if (credWatcher) credWatcher.close(); } },
     vscode.commands.registerCommand('aiMeter.refresh', poll),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('aiMeter')) return;

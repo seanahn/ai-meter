@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Fix the status bar item staying invisible until a manual refresh when the extension activates during a Remote-SSH reconnect: the item now has a stable id/name and re-asserts `show()` shortly after activation.
+- New "AI Meter" output channel logging mode and render decisions, for diagnosing display issues.
+
 ## 0.2.1
 
 - Cost mode status bar now shows the current model and today's usage only (`opus-5 5.2M $18.9`); the 5h session figure moved to the tooltip.
