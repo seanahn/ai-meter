@@ -18,10 +18,10 @@ AI Meter reuses the OAuth token that [Claude Code](https://claude.com/claude-cod
 
 ## Cost mode (Bedrock / API key)
 
-Bedrock and API-key setups have no subscription quota, so there is nothing for the usage endpoint to report. For those, AI Meter switches to **cost mode**: it reads the Claude Code transcripts under `~/.claude/projects/` locally and shows session (last 5h) and today token totals with an estimated cost, priced at Anthropic list rates (input/output plus cache write/read). Hover for a per-model breakdown.
+Bedrock and API-key setups have no subscription quota, so there is nothing for the usage endpoint to report. For those, AI Meter switches to **cost mode**: it reads the Claude Code transcripts under `~/.claude/projects/` locally and shows the model in use and today's token total with an estimated cost, priced at Anthropic list rates (input/output plus cache write/read). Hover for the 5h session figure, a last-7-day usage chart, and a per-model breakdown.
 
 ```
-⊞ 5h 1.2M $4.31 day 5.2M $18.9
+⊞ opus-5 5.2M $18.9
 ```
 
 - Auto-selected when Claude Code is configured for Bedrock (`CLAUDE_CODE_USE_BEDROCK` in the environment or in `~/.claude/settings.json`'s `env` block); force it with `aiMeter.mode: "cost"`.

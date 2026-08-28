@@ -226,22 +226,40 @@ function collectRecords(cutoffMs) {
   return out;
 }
 
-/** Token totals and estimated cost for the 5h session and the current day. */
+/** Short display name: "us.anthropic.claude-opus-5" → "opus-5", "claude-haiku-4-5-20251001" → "haiku-4-5". */
+function shortModel(model) {
+  return String(model).replace(/^.*claude-/, '').replace(/-v\d+:\d+$/, '').replace(/-\d{8}$/, '');
+}
+
+/** Token totals and estimated cost for the 5h session, today, and the last 7 days. */
 function computeCostStats() {
   const now = Date.now();
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const dayStart = midnight.getTime();
   const sessionStart = now - SESSION_MS;
+  const days = []; // oldest first, 7 entries ending today
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(midnight);
+    d.setDate(d.getDate() - i);
+    days.push({ start: d.getTime(), label: d.toLocaleDateString([], { weekday: 'short' }), tokens: 0, cost: 0 });
+  }
   const stats = {
     session: { tokens: 0, cost: 0 },
     today: { tokens: 0, cost: 0 },
-    models: new Map(), // model -> {input, output, cacheRead, cacheWrite, cost, unpriced}
+    days,
+    latestModel: null, // model of the most recent request
+    models: new Map(), // today, model -> {input, output, cacheRead, cacheWrite, cost, unpriced}
   };
-  for (const r of collectRecords(Math.min(dayStart, sessionStart))) {
+  let latestTs = 0;
+  for (const r of collectRecords(Math.min(days[0].start, sessionStart))) {
     const cost = recordCost(r.model, r);
     const tokens = r.input + r.output + r.cacheRead + r.cacheW5 + r.cacheW1;
+    if (r.ts > latestTs) { latestTs = r.ts; stats.latestModel = r.model; }
     if (r.ts >= sessionStart) { stats.session.tokens += tokens; stats.session.cost += cost; }
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (r.ts >= days[i].start) { days[i].tokens += tokens; days[i].cost += cost; break; }
+    }
     if (r.ts >= dayStart) {
       stats.today.tokens += tokens;
       stats.today.cost += cost;
@@ -330,14 +348,22 @@ function activate(context) {
       return;
     }
     const s = costStats;
-    item.text = '$(dashboard) 5h ' + fmtTok(s.session.tokens) + ' ' + fmtUsd(s.session.cost) +
-      ' day ' + fmtTok(s.today.tokens) + ' ' + fmtUsd(s.today.cost);
+    item.text = '$(dashboard) ' + (s.latestModel ? shortModel(s.latestModel) + ' ' : '') +
+      fmtTok(s.today.tokens) + ' ' + fmtUsd(s.today.cost);
     item.backgroundColor = undefined;
 
     const md = new vscode.MarkdownString();
     md.appendMarkdown('**Claude cost** — estimated from local transcripts  \n');
     md.appendMarkdown('**Session (5h)** ' + fmtTok(s.session.tokens) + ' tokens · ≈' + fmtUsd(s.session.cost) + '  \n');
-    md.appendMarkdown('**Today** ' + fmtTok(s.today.tokens) + ' tokens · ≈' + fmtUsd(s.today.cost) + '  \n');
+    md.appendMarkdown('**Today** ' + fmtTok(s.today.tokens) + ' tokens · ≈' + fmtUsd(s.today.cost) +
+      (s.latestModel ? ' · current model `' + shortModel(s.latestModel) + '`' : '') + '  \n');
+    md.appendMarkdown('\n**Last 7 days**\n');
+    const maxCost = Math.max(0.000001, ...s.days.map(d => d.cost));
+    const week = s.days.map(d => {
+      const bar = '▇'.repeat(Math.round(d.cost / maxCost * 20)).padEnd(20, '·');
+      return d.label + ' ' + bar + ' ' + fmtTok(d.tokens).padStart(6) + ' ' + fmtUsd(d.cost).padStart(6);
+    });
+    md.appendCodeblock(week.join('\n'), 'text');
     if (s.models.size > 0) {
       md.appendMarkdown('\n');
       const rows = [...s.models.entries()].sort((a, b) => b[1].cost - a[1].cost);

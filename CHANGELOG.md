@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Cost mode status bar now shows the current model and today's usage only (`opus-5 5.2M $18.9`); the 5h session figure moved to the tooltip.
+- Cost mode tooltip: last-7-day usage bar chart (tokens and estimated cost per day).
+
 ## 0.2.0
 
 - Cost mode: session (5h) and today token totals with estimated spend, computed locally from Claude Code transcripts (`~/.claude/projects/**/*.jsonl`) at Anthropic list prices, with a per-model breakdown in the tooltip. Auto-activates when Claude Code is configured for Bedrock (`CLAUDE_CODE_USE_BEDROCK` in the environment or `~/.claude/settings.json`); force with the new `aiMeter.mode` setting (`auto`/`subscription`/`cost`).
