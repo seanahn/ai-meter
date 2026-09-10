@@ -131,14 +131,40 @@ function settingsBedrockOn() {
   } catch (_) { return false; }
 }
 
+/** Provider-prefixed model ids (Bedrock/Vertex style) that subscription
+ * sessions cannot use, e.g. "us.anthropic.claude-sonnet-4-6". */
+const PROVIDER_MODEL = /(^|[.:])anthropic\.claude|^arn:aws:bedrock/;
+
 /** Set env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json, preserving the
  * rest of the file. Controls whether the NEXT Claude Code session uses
- * Bedrock/API (on) or the subscription login (off). Throws on write failure. */
-function setBedrockSetting(on) {
+ * Bedrock/API (on) or the subscription login (off). Also reconciles model
+ * pins, which are backend-specific: switching to subscription stashes a
+ * provider-prefixed saved model and blanks provider-prefixed ANTHROPIC_MODEL /
+ * ANTHROPIC_SMALL_FAST_MODEL env pins (an empty settings value unsets the
+ * inherited variable for Claude Code); switching back restores them.
+ * `stash` is {get(key), set(key, value)} backed by extension globalState. */
+function setBedrockSetting(on, stash) {
   let j = {};
   try { j = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')) || {}; } catch (_) { j = {}; }
   if (!j.env || typeof j.env !== 'object') j.env = {};
   j.env.CLAUDE_CODE_USE_BEDROCK = on ? '1' : '0';
+  if (!on) {
+    if (typeof j.model === 'string' && PROVIDER_MODEL.test(j.model)) {
+      stash.set('model', j.model);
+      delete j.model;
+    }
+    for (const k of ['ANTHROPIC_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL']) {
+      const envPin = process.env[k];
+      if (j.env[k] === undefined && envPin && PROVIDER_MODEL.test(envPin)) j.env[k] = '';
+    }
+  } else {
+    const m = stash.get('model');
+    if (m && j.model === undefined) j.model = m;
+    stash.set('model', undefined);
+    for (const k of ['ANTHROPIC_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL']) {
+      if (j.env[k] === '') delete j.env[k];
+    }
+  }
   fs.mkdirSync(path.dirname(CLAUDE_SETTINGS), { recursive: true });
   fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(j, null, 2) + '\n');
 }
@@ -641,8 +667,12 @@ function activate(context) {
           'Switch Anyway');
         if (pick !== 'Switch Anyway') { log('toggle backend cancelled (no API credentials)'); return; }
       }
+      const stash = {
+        get: k => context.globalState.get('aiMeter.stash.' + k),
+        set: (k, v) => context.globalState.update('aiMeter.stash.' + k, v),
+      };
       try {
-        setBedrockSetting(!on);
+        setBedrockSetting(!on, stash);
       } catch (e) {
         vscode.window.showErrorMessage('AI Meter: could not update ' + CLAUDE_SETTINGS + ' — ' + e.message);
         return;

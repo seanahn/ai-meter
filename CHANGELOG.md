@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.11
+
+- The backend toggle now reconciles model pins, which are backend-specific: switching to subscription stashes a provider-prefixed saved model (`us.anthropic.claude-...`) from `~/.claude/settings.json` and blanks provider-prefixed `ANTHROPIC_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` environment pins via empty settings overrides; switching back to API/Bedrock restores them. Fixes "There's an issue with the selected model (us.anthropic....)" after switching to subscription on Bedrock-provisioned machines.
+
 ## 0.3.10
 
 - Hard guard against status bar shadowing in remote windows: if a UI-side (local) instance is activated for a window that has a remote attached, it now deactivates itself and leaves the window to the remote instance, regardless of how VS Code resolved extension kinds.
