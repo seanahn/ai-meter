@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.10
+
+- Hard guard against status bar shadowing in remote windows: if a UI-side (local) instance is activated for a window that has a remote attached, it now deactivates itself and leaves the window to the remote instance, regardless of how VS Code resolved extension kinds.
+
 ## 0.3.9
 
 - `extensionKind` is now `["workspace"]` only. With the previous `["workspace", "ui"]`, a Remote-SSH window could also run a local instance whose status bar items shadowed the remote ones — showing the local machine's subscription meter and backend toggle while appearing to be the remote's. A remote window now always shows the remote host's state.

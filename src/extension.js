@@ -378,6 +378,14 @@ function tankBar(remaining) {
 }
 
 function activate(context) {
+  // In a Remote-SSH/WSL/container window, the meter and toggle must reflect the
+  // REMOTE ~/.claude (where that window's Claude Code runs). If VS Code also
+  // activates a UI-side (local) instance for such a window, stand down — its
+  // items would shadow the remote's with the local machine's data.
+  if (vscode.env.remoteName !== undefined &&
+      context.extension && context.extension.extensionKind === vscode.ExtensionKind.UI) {
+    return;
+  }
   // Explicit id + name: keeps the entry's identity stable across extension
   // host restarts and names it in the status bar context menu.
   const item = vscode.window.createStatusBarItem('aiMeter.usage', vscode.StatusBarAlignment.Right, 100.01);
