@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5
+
+- The login command marks CLI onboarding as completed (`~/.claude.json`) before running `claude /login`, so first-time logins start at the login step instead of the theme-picker sample-diff screen. An existing theme choice is never overridden, and the CLI's folder-trust safety prompt is left in place.
+
 ## 0.3.4
 
 - The login command now finds the `claude` CLI even when it is not on PATH, by falling back to the binary bundled inside the installed Claude Code extension; if neither exists, it says so instead of opening a terminal that fails with "command not found".

@@ -659,6 +659,21 @@ function activate(context) {
           'AI Meter: the claude CLI was not found on PATH and the Claude Code extension (with its bundled binary) is not installed here. Install Claude Code, or open the Claude Code panel and type /login.');
         return;
       }
+      // First run of the CLI on a machine opens theme-picker onboarding before
+      // login, which reads as noise here — mark onboarding done (keeping any
+      // existing theme choice) so /login starts at the login step. The CLI's
+      // folder-trust prompt is a real safety question and is left alone.
+      try {
+        const cfgPath = path.join(os.homedir(), '.claude.json');
+        let j = {};
+        try { j = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) || {}; } catch (_) { j = {}; }
+        if (!j.hasCompletedOnboarding) {
+          j.hasCompletedOnboarding = true;
+          if (!j.theme) j.theme = 'dark';
+          fs.writeFileSync(cfgPath, JSON.stringify(j, null, 2) + '\n');
+          log('seeded ~/.claude.json onboarding flags for login');
+        }
+      } catch (_) { /* non-fatal — worst case the CLI shows its onboarding */ }
       log('open login terminal (' + bin + ' /login)');
       const term = vscode.window.createTerminal({ name: 'Claude login', env: { CLAUDE_CODE_USE_BEDROCK: '0' } });
       term.show();
