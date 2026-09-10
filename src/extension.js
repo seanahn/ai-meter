@@ -139,6 +139,17 @@ function setBedrockSetting(on) {
   fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(j, null, 2) + '\n');
 }
 
+/** Rough check that this machine has credentials for the API/Bedrock backend:
+ * an Anthropic API key, a Bedrock bearer token, or any AWS credential source. */
+function apiCredentialsPresent() {
+  if (process.env.ANTHROPIC_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK ||
+      process.env.AWS_ACCESS_KEY_ID || process.env.AWS_PROFILE) return true;
+  for (const f of ['credentials', 'config']) {
+    try { fs.accessSync(path.join(os.homedir(), '.aws', f)); return true; } catch (_) { /* keep looking */ }
+  }
+  return false;
+}
+
 // Anthropic list prices, $/MTok [input, output]. Cache write bills at input
 // ×1.25 (5m TTL) or ×2 (1h TTL); cache read at input ×0.1. Bedrock model ids
 // carry prefixes (us.anthropic.claude-...), so match by substring. First
@@ -348,13 +359,14 @@ function tankBar(remaining) {
 function activate(context) {
   // Explicit id + name: keeps the entry's identity stable across extension
   // host restarts and names it in the status bar context menu.
-  const item = vscode.window.createStatusBarItem('aiMeter.usage', vscode.StatusBarAlignment.Right, 100);
+  const item = vscode.window.createStatusBarItem('aiMeter.usage', vscode.StatusBarAlignment.Right, 100.01);
   item.name = 'AI Meter';
   item.command = 'aiMeter.refresh';
   // A small toggle button sitting just left of the meter (higher priority =
-  // further left on the right side). Shows the active mode; clicking flips
-  // subscription <-> cost so you don't have to edit settings.
-  const toggle = vscode.window.createStatusBarItem('aiMeter.mode', vscode.StatusBarAlignment.Right, 101);
+  // further left on the right side; the 0.001 gap between the two priorities
+  // keeps other extensions' items from slotting in between). Shows the active
+  // mode; clicking flips subscription <-> cost so you don't have to edit settings.
+  const toggle = vscode.window.createStatusBarItem('aiMeter.mode', vscode.StatusBarAlignment.Right, 100.011);
   toggle.name = 'AI Meter Mode';
   toggle.command = 'aiMeter.toggleMode';
   const out = vscode.window.createOutputChannel('AI Meter');
@@ -382,14 +394,17 @@ function activate(context) {
   // use (from ~/.claude/settings.json), and clicking it flips that backend.
   // account = subscription/login, cloud = API/Bedrock.
   function updateToggle() {
+    const shadowNote = process.env.CLAUDE_CODE_USE_BEDROCK !== undefined
+      ? '\n\n⚠ `CLAUDE_CODE_USE_BEDROCK` is also set in this machine\'s environment (e.g. `~/.bashrc`) — that value overrides this setting in shells that export it.'
+      : '';
     if (settingsBedrockOn()) {
-      toggle.text = '$(cloud)';
+      toggle.text = '$(cloud) API';
       toggle.tooltip = new vscode.MarkdownString(
-        'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.');
+        'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.' + shadowNote);
     } else {
-      toggle.text = '$(account)';
+      toggle.text = '$(account) sub';
       toggle.tooltip = new vscode.MarkdownString(
-        'Claude Code backend: **subscription (login)**.\n\nClick to switch to **API / Bedrock** for the next session. Running sessions keep their current auth.');
+        'Claude Code backend: **subscription (login)**.\n\nClick to switch to **API / Bedrock** for the next session. Running sessions keep their current auth.' + shadowNote);
     }
   }
 
@@ -578,8 +593,16 @@ function activate(context) {
       }
       const to = !on ? 'API / Bedrock' : 'subscription (login)';
       log('toggle backend -> CLAUDE_CODE_USE_BEDROCK=' + (!on ? '1' : '0'));
-      vscode.window.showInformationMessage(
-        'Claude Code will use ' + to + ' on its next session (start a new session to apply). Running sessions keep their current auth.');
+      let msg = 'Claude Code will use ' + to + ' on its next session (start a new session to apply). Running sessions keep their current auth.';
+      if (process.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
+        msg += ' Note: CLAUDE_CODE_USE_BEDROCK is also set in this machine\'s environment (e.g. ~/.bashrc), which overrides this setting in shells that export it.';
+      }
+      if (!on && !apiCredentialsPresent()) {
+        vscode.window.showWarningMessage(
+          'AI Meter: no Bedrock/API credentials found on this machine (no ~/.aws credentials, AWS_* variables, or ANTHROPIC_API_KEY) — the next Claude Code session may fail to authenticate. ' + msg);
+      } else {
+        vscode.window.showInformationMessage(msg);
+      }
       updateToggle();
       poll(); // AI Meter display follows when aiMeter.mode is "auto"
     }),

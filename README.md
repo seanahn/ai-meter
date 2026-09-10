@@ -48,8 +48,8 @@ Bedrock and API-key setups have no subscription quota, so there is nothing for t
 ## Switch Claude Code's backend
 
 A small toggle button sits just left of the meter and shows which backend a
-**new Claude Code session** will use — `$(account)` **subscription** (login) or
-`$(cloud)` **API / Bedrock**. Click it to flip between them: AI Meter writes
+**new Claude Code session** will use — `$(account) sub` **subscription** (login) or
+`$(cloud) API` **API / Bedrock**. Click it to flip between them: AI Meter writes
 `env.CLAUDE_CODE_USE_BEDROCK` in `~/.claude/settings.json` (`0` = subscription,
 `1` = Bedrock/API), preserving the rest of the file.
 

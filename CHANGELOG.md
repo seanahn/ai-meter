@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Backend toggle shows a text label (`$(account) sub` / `$(cloud) API`) so the active backend and the click target are legible at a glance.
+- Toggle and meter use adjacent fractional priorities (100.011 / 100.01) so other extensions' status bar items can no longer slot in between them.
+- Switching to API/Bedrock warns when no credentials are found on the machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`), and both the toast and the toggle tooltip note when an environment-exported `CLAUDE_CODE_USE_BEDROCK` (e.g. in `~/.bashrc`) shadows the settings.json value.
+
 ## 0.3.0
 
 - Backend toggle button: a small status bar item (left of the meter) shows which backend a new Claude Code session will use — `$(account)` subscription (login) or `$(cloud)` API/Bedrock — and clicking it **switches Claude Code's backend** by writing `env.CLAUDE_CODE_USE_BEDROCK` in `~/.claude/settings.json` (preserving the rest of the file). Also available as **AI Meter: Switch Claude Code Backend (Subscription / API)**. Takes effect on the next Claude Code session (running sessions keep their auth); with `aiMeter.mode: auto` the meter's display follows the backend.
