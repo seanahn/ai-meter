@@ -410,29 +410,40 @@ function activate(context) {
   // The toggle button reflects the Claude Code BACKEND that a new session will
   // use (from ~/.claude/settings.json), and clicking it flips that backend.
   // account = subscription/login, cloud = API/Bedrock.
+  // The icon reflects the EFFECTIVE backend — the environment variable when it
+  // is set (it wins for every process that inherits it), otherwise the
+  // settings.json value the toggle manages.
+  function envBedrockPin() { return process.env.CLAUDE_CODE_USE_BEDROCK; }
+  function effectiveBedrockOn() {
+    const v = envBedrockPin();
+    if (v !== undefined) return v !== '0' && v !== 'false';
+    return settingsBedrockOn();
+  }
+
   function updateToggle() {
-    const shadowNote = process.env.CLAUDE_CODE_USE_BEDROCK !== undefined
-      ? '\n\n⚠ `CLAUDE_CODE_USE_BEDROCK` is also set in this machine\'s environment (e.g. `~/.bashrc`) — that value overrides this setting in shells that export it.'
-      : '';
-    if (settingsBedrockOn()) {
+    const pinned = envBedrockPin() !== undefined;
+    const pinNote = pinned
+      ? '\n\n$(pinned) Pinned by `CLAUDE_CODE_USE_BEDROCK=' + envBedrockPin() + '` in this machine\'s environment (e.g. `~/.bashrc`) — the toggle cannot override it; change or unset that export to switch.'
+      : '\n\nClick to switch for the next session. Running sessions keep their current auth.';
+    if (effectiveBedrockOn()) {
       if (apiCredentialsPresent()) {
         toggle.text = '$(cloud) API';
         toggle.backgroundColor = undefined;
         toggle.tooltip = new vscode.MarkdownString(
-          'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.' + shadowNote);
+          'Claude Code backend: **API / Bedrock**.' + pinNote);
       } else {
         // API selected but nothing to authenticate with — keep the item in a
         // warning state so the broken configuration stays visible, not just a toast.
         toggle.text = '$(cloud) API $(warning)';
         toggle.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         toggle.tooltip = new vscode.MarkdownString(
-          '⚠ Claude Code backend: **API / Bedrock**, but **no credentials were found** on this machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`) — the next Claude Code session may fail to authenticate.\n\nClick to switch back to **subscription (login)**.' + shadowNote);
+          '⚠ Claude Code backend: **API / Bedrock**, but **no credentials were found** on this machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`) — the next Claude Code session may fail to authenticate.' + pinNote);
       }
     } else {
       toggle.text = '$(account) sub';
       toggle.backgroundColor = undefined;
       toggle.tooltip = new vscode.MarkdownString(
-        'Claude Code backend: **subscription (login)**.\n\nClick to switch to **API / Bedrock** for the next session. Running sessions keep their current auth.' + shadowNote);
+        'Claude Code backend: **subscription (login)**.' + pinNote);
     }
   }
 
@@ -614,6 +625,13 @@ function activate(context) {
       // Switch the Claude Code auth backend for the NEXT session by flipping
       // env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json. Running sessions
       // keep their auth; a new `claude` session reads the new value.
+      if (envBedrockPin() !== undefined) {
+        vscode.window.showWarningMessage(
+          'Claude Code backend is pinned to ' + (effectiveBedrockOn() ? 'API / Bedrock' : 'subscription') +
+          ' by CLAUDE_CODE_USE_BEDROCK=' + envBedrockPin() + ' in this machine\'s environment (e.g. ~/.bashrc). ' +
+          'The toggle cannot override it — change or unset that export (then restart the VS Code server) to switch.');
+        return;
+      }
       const on = settingsBedrockOn();
       if (!on && !apiCredentialsPresent()) {
         // About to select API/Bedrock with nothing to authenticate with —
@@ -632,10 +650,7 @@ function activate(context) {
       }
       const to = !on ? 'API / Bedrock' : 'subscription (login)';
       log('toggle backend -> CLAUDE_CODE_USE_BEDROCK=' + (!on ? '1' : '0'));
-      let msg = 'Claude Code will use ' + to + ' on its next session (start a new session to apply). Running sessions keep their current auth.';
-      if (process.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
-        msg += ' Note: CLAUDE_CODE_USE_BEDROCK is also set in this machine\'s environment (e.g. ~/.bashrc), which overrides this setting in shells that export it.';
-      }
+      const msg = 'Claude Code will use ' + to + ' on its next session (start a new session to apply). Running sessions keep their current auth.';
       if (on && !readCredentials()) {
         // Switched to subscription on a machine that has never logged in —
         // offer the login flow directly instead of waiting for Claude Code to ask.

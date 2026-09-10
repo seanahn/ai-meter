@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.7
+
+- The backend toggle now shows the **effective** backend: when `CLAUDE_CODE_USE_BEDROCK` is set in the environment it wins (API icon for `1`, sub for `0`), otherwise the `~/.claude/settings.json` value applies. Previously the icon read only settings.json and could disagree with what Claude Code actually uses.
+- When the environment variable pins the backend, clicking the toggle explains the pin (change/unset the export, restart the VS Code server) instead of writing a settings value that cannot take effect; the tooltip shows the pin too.
+
 ## 0.3.6
 
 - The login command now opens the Claude Code panel's graphical login page (Claude.ai Subscription / Anthropic Console / Bedrock) when the Claude Code extension is installed; the terminal `claude /login` flow remains as the fallback.
