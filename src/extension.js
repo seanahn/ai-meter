@@ -114,6 +114,31 @@ function bedrockConfigured() {
   return !!v && v !== '0' && v !== 'false';
 }
 
+const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
+
+/** True when ~/.claude/settings.json's env turns Bedrock on. This is the value
+ * the toggle writes and a new Claude Code session reads — the source of truth
+ * for "what will the next session use", independent of the current process env. */
+function settingsBedrockOn() {
+  try {
+    const j = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8'));
+    const v = j && j.env ? j.env.CLAUDE_CODE_USE_BEDROCK : undefined;
+    return v !== undefined && String(v) !== '0' && String(v) !== 'false';
+  } catch (_) { return false; }
+}
+
+/** Set env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json, preserving the
+ * rest of the file. Controls whether the NEXT Claude Code session uses
+ * Bedrock/API (on) or the subscription login (off). Throws on write failure. */
+function setBedrockSetting(on) {
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')) || {}; } catch (_) { j = {}; }
+  if (!j.env || typeof j.env !== 'object') j.env = {};
+  j.env.CLAUDE_CODE_USE_BEDROCK = on ? '1' : '0';
+  fs.mkdirSync(path.dirname(CLAUDE_SETTINGS), { recursive: true });
+  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(j, null, 2) + '\n');
+}
+
 // Anthropic list prices, $/MTok [input, output]. Cache write bills at input
 // ×1.25 (5m TTL) or ×2 (1h TTL); cache read at input ×0.1. Bedrock model ids
 // carry prefixes (us.anthropic.claude-...), so match by substring. First
@@ -326,12 +351,18 @@ function activate(context) {
   const item = vscode.window.createStatusBarItem('aiMeter.usage', vscode.StatusBarAlignment.Right, 100);
   item.name = 'AI Meter';
   item.command = 'aiMeter.refresh';
+  // A small toggle button sitting just left of the meter (higher priority =
+  // further left on the right side). Shows the active mode; clicking flips
+  // subscription <-> cost so you don't have to edit settings.
+  const toggle = vscode.window.createStatusBarItem('aiMeter.mode', vscode.StatusBarAlignment.Right, 101);
+  toggle.name = 'AI Meter Mode';
+  toggle.command = 'aiMeter.toggleMode';
   const out = vscode.window.createOutputChannel('AI Meter');
-  context.subscriptions.push(item, out);
+  context.subscriptions.push(item, toggle, out);
   const log = msg => out.appendLine(new Date().toLocaleTimeString() + ' ' + msg);
   let visible = false; // what render() last decided, so re-shows never override a hide()
-  const show = () => { visible = true; item.show(); };
-  const hide = () => { visible = false; item.hide(); };
+  const show = () => { visible = true; updateToggle(); item.show(); toggle.show(); };
+  const hide = () => { visible = false; item.hide(); toggle.hide(); };
 
   let limits = context.globalState.get(CACHE_KEY) || null;
   let lastError = null;
@@ -345,6 +376,21 @@ function activate(context) {
     const m = cfg().get('mode') || 'auto';
     if (m === 'auto') return bedrockConfigured() ? 'cost' : 'subscription';
     return m;
+  }
+
+  // The toggle button reflects the Claude Code BACKEND that a new session will
+  // use (from ~/.claude/settings.json), and clicking it flips that backend.
+  // account = subscription/login, cloud = API/Bedrock.
+  function updateToggle() {
+    if (settingsBedrockOn()) {
+      toggle.text = '$(cloud)';
+      toggle.tooltip = new vscode.MarkdownString(
+        'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.');
+    } else {
+      toggle.text = '$(account)';
+      toggle.tooltip = new vscode.MarkdownString(
+        'Claude Code backend: **subscription (login)**.\n\nClick to switch to **API / Bedrock** for the next session. Running sessions keep their current auth.');
+    }
   }
 
   function renderCost() {
@@ -501,7 +547,7 @@ function activate(context) {
   // Re-assert visibility a few times after activation. When the extension
   // host starts during a Remote-SSH reconnect, the first show() can be lost by
   // the window and the item stays invisible until the next poll.
-  const reshowTimers = [2000, 10000, 60000].map(ms => setTimeout(() => { if (visible) item.show(); }, ms));
+  const reshowTimers = [2000, 10000, 60000].map(ms => setTimeout(() => { if (visible) { item.show(); toggle.show(); } }, ms));
 
   // Re-poll as soon as the credentials file changes, so a `claude auth
   // logout`/`login` cycle recovers instantly instead of waiting out a timer.
@@ -519,6 +565,24 @@ function activate(context) {
   context.subscriptions.push(
     { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); clearTimeout(credDebounce); reshowTimers.forEach(clearTimeout); if (credWatcher) credWatcher.close(); } },
     vscode.commands.registerCommand('aiMeter.refresh', poll),
+    vscode.commands.registerCommand('aiMeter.toggleMode', () => {
+      // Switch the Claude Code auth backend for the NEXT session by flipping
+      // env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json. Running sessions
+      // keep their auth; a new `claude` session reads the new value.
+      const on = settingsBedrockOn();
+      try {
+        setBedrockSetting(!on);
+      } catch (e) {
+        vscode.window.showErrorMessage('AI Meter: could not update ' + CLAUDE_SETTINGS + ' — ' + e.message);
+        return;
+      }
+      const to = !on ? 'API / Bedrock' : 'subscription (login)';
+      log('toggle backend -> CLAUDE_CODE_USE_BEDROCK=' + (!on ? '1' : '0'));
+      vscode.window.showInformationMessage(
+        'Claude Code will use ' + to + ' on its next session (start a new session to apply). Running sessions keep their current auth.');
+      updateToggle();
+      poll(); // AI Meter display follows when aiMeter.mode is "auto"
+    }),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('aiMeter')) return;
       clearInterval(pollTimer);

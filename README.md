@@ -45,9 +45,38 @@ Bedrock and API-key setups have no subscription quota, so there is nothing for t
 | `aiMeter.errorBelow` | `10` | Error highlight when any limit has less than this % remaining. |
 | `aiMeter.hideWhenUnavailable` | `false` | Hide the item entirely when no credentials are found. |
 
+## Switch Claude Code's backend
+
+A small toggle button sits just left of the meter and shows which backend a
+**new Claude Code session** will use — `$(account)` **subscription** (login) or
+`$(cloud)` **API / Bedrock**. Click it to flip between them: AI Meter writes
+`env.CLAUDE_CODE_USE_BEDROCK` in `~/.claude/settings.json` (`0` = subscription,
+`1` = Bedrock/API), preserving the rest of the file.
+
+- Takes effect on the **next** Claude Code session — start a new session to
+  apply. **Running sessions keep their current auth** (a live process can't
+  change how it authenticated).
+- Switching to subscription requires being logged in (`claude` login);
+  switching to Bedrock requires your AWS credentials to be available — the
+  toggle only flips the flag, it doesn't create credentials.
+- If you also keep `aiMeter.mode` at `auto`, the meter's display follows: cost
+  estimate under Bedrock, subscription limits under login.
+- Note: an exported `CLAUDE_CODE_USE_BEDROCK` in your shell environment would
+  override `settings.json`; the toggle manages the `settings.json` value.
+
+### Remote-SSH
+
+AI Meter runs on whichever host the extension host runs on. Under Remote-SSH it
+runs on the **remote** (declared `extensionKind: ["workspace", "ui"]`), so it
+meters and toggles the **remote's** `~/.claude/` — the same environment the
+remote Claude Code authenticates with. In a remote window the toggle affects the
+remote Claude Code, not your laptop's (which is normally what you want). In a
+local window it runs locally against your machine's `~/.claude/`.
+
 ## Commands
 
-- **AI Meter: Refresh Usage** — also bound to clicking the status bar item.
+- **AI Meter: Refresh Usage** — also bound to clicking the meter status bar item.
+- **AI Meter: Switch Claude Code Backend (Subscription / API)** — flip `~/.claude/settings.json`'s Bedrock flag; also bound to clicking the toggle button.
 
 ## Development
 

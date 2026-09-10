@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- Backend toggle button: a small status bar item (left of the meter) shows which backend a new Claude Code session will use — `$(account)` subscription (login) or `$(cloud)` API/Bedrock — and clicking it **switches Claude Code's backend** by writing `env.CLAUDE_CODE_USE_BEDROCK` in `~/.claude/settings.json` (preserving the rest of the file). Also available as **AI Meter: Switch Claude Code Backend (Subscription / API)**. Takes effect on the next Claude Code session (running sessions keep their auth); with `aiMeter.mode: auto` the meter's display follows the backend.
+- Declared `extensionKind: ["workspace", "ui"]` so under Remote-SSH the meter and the backend toggle act on the **remote** `~/.claude/` (where remote Claude Code authenticates), and locally otherwise.
+
 ## 0.2.2
 
 - Fix the status bar item staying invisible until a manual refresh when the extension activates during a Remote-SSH reconnect: the item now has a stable id/name and re-asserts `show()` shortly after activation.
