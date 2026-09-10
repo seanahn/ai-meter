@@ -139,6 +139,23 @@ function setBedrockSetting(on) {
   fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(j, null, 2) + '\n');
 }
 
+/** Locate the `claude` CLI: PATH first, then the binary bundled inside the
+ * Claude Code VS Code extension (present whenever the extension is installed,
+ * even if no standalone CLI is). Returns a runnable path/name, or null. */
+function findClaudeBinary() {
+  try {
+    execFileSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], { timeout: 3000 });
+    return 'claude';
+  } catch (_) { /* not on PATH */ }
+  const ext = vscode.extensions.getExtension('anthropic.claude-code');
+  if (ext) {
+    const bin = path.join(ext.extensionPath, 'resources', 'native-binary',
+      process.platform === 'win32' ? 'claude.exe' : 'claude');
+    try { fs.accessSync(bin, fs.constants.X_OK); return bin; } catch (_) { /* no bundled binary */ }
+  }
+  return null;
+}
+
 /** Rough check that this machine has credentials for the API/Bedrock backend:
  * an Anthropic API key, a Bedrock bearer token, or any AWS credential source. */
 function apiCredentialsPresent() {
@@ -636,10 +653,16 @@ function activate(context) {
       // an exported CLAUDE_CODE_USE_BEDROCK=1 (e.g. from ~/.bashrc on a pod)
       // cannot keep `claude` in Bedrock mode and skip the login flow. The
       // credentials watcher picks up ~/.claude/.credentials.json when it lands.
-      log('open login terminal (claude /login)');
+      const bin = findClaudeBinary();
+      if (!bin) {
+        vscode.window.showErrorMessage(
+          'AI Meter: the claude CLI was not found on PATH and the Claude Code extension (with its bundled binary) is not installed here. Install Claude Code, or open the Claude Code panel and type /login.');
+        return;
+      }
+      log('open login terminal (' + bin + ' /login)');
       const term = vscode.window.createTerminal({ name: 'Claude login', env: { CLAUDE_CODE_USE_BEDROCK: '0' } });
       term.show();
-      term.sendText('claude /login');
+      term.sendText((bin === 'claude' ? 'claude' : JSON.stringify(bin)) + ' /login');
     }),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('aiMeter')) return;

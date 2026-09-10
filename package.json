@@ -2,7 +2,7 @@
   "name": "ai-meter",
   "displayName": "AI Meter",
   "description": "Claude usage in the status bar \u2014 subscription limits (5-hour session, weekly), or session tokens and estimated cost for Bedrock/API setups.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "seanahn",
   "license": "MIT",
   "repository": {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4
+
+- The login command now finds the `claude` CLI even when it is not on PATH, by falling back to the binary bundled inside the installed Claude Code extension; if neither exists, it says so instead of opening a terminal that fails with "command not found".
+
 ## 0.3.3
 
 - New **AI Meter: Log in to Claude (subscription)** command: opens a terminal running `claude /login` with `CLAUDE_CODE_USE_BEDROCK=0`, so login works even on machines whose shell environment pins Claude Code to Bedrock.
