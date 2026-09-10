@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Switching to API/Bedrock on a machine with no credentials now asks for confirmation in a modal dialog (Switch Anyway / Cancel) instead of only toasting after the fact.
+- While API/Bedrock is selected without credentials, the toggle stays in a persistent warning state — amber background and a `$(warning)` icon — until credentials appear or the backend is switched back, so the broken configuration is visible in the status bar itself.
+
 ## 0.3.1
 
 - Backend toggle shows a text label (`$(account) sub` / `$(cloud) API`) so the active backend and the click target are legible at a glance.

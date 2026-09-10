@@ -58,7 +58,9 @@ A small toggle button sits just left of the meter and shows which backend a
   change how it authenticated).
 - Switching to subscription requires being logged in (`claude` login);
   switching to Bedrock requires your AWS credentials to be available — the
-  toggle only flips the flag, it doesn't create credentials.
+  toggle only flips the flag, it doesn't create credentials. If no API/Bedrock
+  credentials are found, the switch asks for confirmation first and the toggle
+  then stays amber with a warning icon until credentials are configured.
 - If you also keep `aiMeter.mode` at `auto`, the meter's display follows: cost
   estimate under Bedrock, subscription limits under login.
 - Note: an exported `CLAUDE_CODE_USE_BEDROCK` in your shell environment would

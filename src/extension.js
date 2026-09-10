@@ -398,11 +398,22 @@ function activate(context) {
       ? '\n\n⚠ `CLAUDE_CODE_USE_BEDROCK` is also set in this machine\'s environment (e.g. `~/.bashrc`) — that value overrides this setting in shells that export it.'
       : '';
     if (settingsBedrockOn()) {
-      toggle.text = '$(cloud) API';
-      toggle.tooltip = new vscode.MarkdownString(
-        'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.' + shadowNote);
+      if (apiCredentialsPresent()) {
+        toggle.text = '$(cloud) API';
+        toggle.backgroundColor = undefined;
+        toggle.tooltip = new vscode.MarkdownString(
+          'Claude Code backend: **API / Bedrock**.\n\nClick to switch to **subscription (login)** for the next session. Running sessions keep their current auth.' + shadowNote);
+      } else {
+        // API selected but nothing to authenticate with — keep the item in a
+        // warning state so the broken configuration stays visible, not just a toast.
+        toggle.text = '$(cloud) API $(warning)';
+        toggle.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        toggle.tooltip = new vscode.MarkdownString(
+          '⚠ Claude Code backend: **API / Bedrock**, but **no credentials were found** on this machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`) — the next Claude Code session may fail to authenticate.\n\nClick to switch back to **subscription (login)**.' + shadowNote);
+      }
     } else {
       toggle.text = '$(account) sub';
+      toggle.backgroundColor = undefined;
       toggle.tooltip = new vscode.MarkdownString(
         'Claude Code backend: **subscription (login)**.\n\nClick to switch to **API / Bedrock** for the next session. Running sessions keep their current auth.' + shadowNote);
     }
@@ -580,11 +591,20 @@ function activate(context) {
   context.subscriptions.push(
     { dispose: () => { clearInterval(pollTimer); if (retryTimer) clearInterval(retryTimer); clearTimeout(credDebounce); reshowTimers.forEach(clearTimeout); if (credWatcher) credWatcher.close(); } },
     vscode.commands.registerCommand('aiMeter.refresh', poll),
-    vscode.commands.registerCommand('aiMeter.toggleMode', () => {
+    vscode.commands.registerCommand('aiMeter.toggleMode', async () => {
       // Switch the Claude Code auth backend for the NEXT session by flipping
       // env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json. Running sessions
       // keep their auth; a new `claude` session reads the new value.
       const on = settingsBedrockOn();
+      if (!on && !apiCredentialsPresent()) {
+        // About to select API/Bedrock with nothing to authenticate with —
+        // confirm via a modal so the problem can't be missed or buried.
+        const pick = await vscode.window.showWarningMessage(
+          'No Bedrock/API credentials found on this machine — no ~/.aws credentials, AWS_* variables, or ANTHROPIC_API_KEY. The next Claude Code session would fail to authenticate.',
+          { modal: true, detail: 'Switch to API / Bedrock anyway? The toggle will stay highlighted until credentials are configured.' },
+          'Switch Anyway');
+        if (pick !== 'Switch Anyway') { log('toggle backend cancelled (no API credentials)'); return; }
+      }
       try {
         setBedrockSetting(!on);
       } catch (e) {
@@ -597,12 +617,7 @@ function activate(context) {
       if (process.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
         msg += ' Note: CLAUDE_CODE_USE_BEDROCK is also set in this machine\'s environment (e.g. ~/.bashrc), which overrides this setting in shells that export it.';
       }
-      if (!on && !apiCredentialsPresent()) {
-        vscode.window.showWarningMessage(
-          'AI Meter: no Bedrock/API credentials found on this machine (no ~/.aws credentials, AWS_* variables, or ANTHROPIC_API_KEY) — the next Claude Code session may fail to authenticate. ' + msg);
-      } else {
-        vscode.window.showInformationMessage(msg);
-      }
+      vscode.window.showInformationMessage(msg);
       updateToggle();
       poll(); // AI Meter display follows when aiMeter.mode is "auto"
     }),
