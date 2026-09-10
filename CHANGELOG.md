@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.9
+
+- `extensionKind` is now `["workspace"]` only. With the previous `["workspace", "ui"]`, a Remote-SSH window could also run a local instance whose status bar items shadowed the remote ones — showing the local machine's subscription meter and backend toggle while appearing to be the remote's. A remote window now always shows the remote host's state.
+
 ## 0.3.8
 
 - Corrected backend precedence after empirical testing against Claude Code: the `~/.claude/settings.json` env value (what the toggle writes) is applied by Claude Code **over** the inherited process environment, so the toggle now always works — including on machines whose shell exports `CLAUDE_CODE_USE_BEDROCK`. The exported variable only decides when settings carry no value, and the tooltip says so in that case. Removes 0.3.7's "pinned by environment" refusal, which was based on the wrong precedence model.
