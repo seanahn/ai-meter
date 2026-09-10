@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.8
+
+- Corrected backend precedence after empirical testing against Claude Code: the `~/.claude/settings.json` env value (what the toggle writes) is applied by Claude Code **over** the inherited process environment, so the toggle now always works — including on machines whose shell exports `CLAUDE_CODE_USE_BEDROCK`. The exported variable only decides when settings carry no value, and the tooltip says so in that case. Removes 0.3.7's "pinned by environment" refusal, which was based on the wrong precedence model.
+
 ## 0.3.7
 
 - The backend toggle now shows the **effective** backend: when `CLAUDE_CODE_USE_BEDROCK` is set in the environment it wins (API icon for `1`, sub for `0`), otherwise the `~/.claude/settings.json` value applies. Previously the icon read only settings.json and could disagree with what Claude Code actually uses.

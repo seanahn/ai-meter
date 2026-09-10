@@ -97,20 +97,24 @@ function fetchUsage(cb) {
 // ---------------------------------------------------------------------------
 // Cost mode — parse Claude Code transcripts and price the token usage.
 
-/** True when Claude Code is configured to use Amazon Bedrock. */
-function bedrockConfigured() {
-  let v = process.env.CLAUDE_CODE_USE_BEDROCK;
-  if (v === undefined) {
-    for (const f of ['settings.json', 'settings.local.json']) {
-      try {
-        const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', f), 'utf8'));
-        if (j && j.env && j.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
-          v = String(j.env.CLAUDE_CODE_USE_BEDROCK);
-          break;
-        }
-      } catch (_) { /* missing or unparsable settings file */ }
-    }
+/** The CLAUDE_CODE_USE_BEDROCK value from Claude Code's settings files
+ * (settings.local.json overrides settings.json), or undefined when unset. */
+function settingsBedrockValue() {
+  for (const f of ['settings.local.json', 'settings.json']) {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', f), 'utf8'));
+      if (j && j.env && j.env.CLAUDE_CODE_USE_BEDROCK !== undefined) return String(j.env.CLAUDE_CODE_USE_BEDROCK);
+    } catch (_) { /* missing or unparsable settings file */ }
   }
+  return undefined;
+}
+
+/** True when the NEXT Claude Code session will use Bedrock/API. Claude Code
+ * applies the settings.json env block over the inherited process environment
+ * (verified empirically), so the settings value decides whenever the key is
+ * present and an exported env var only fills the gap. */
+function bedrockConfigured() {
+  const v = settingsBedrockValue() !== undefined ? settingsBedrockValue() : process.env.CLAUDE_CODE_USE_BEDROCK;
   return !!v && v !== '0' && v !== 'false';
 }
 
@@ -410,40 +414,34 @@ function activate(context) {
   // The toggle button reflects the Claude Code BACKEND that a new session will
   // use (from ~/.claude/settings.json), and clicking it flips that backend.
   // account = subscription/login, cloud = API/Bedrock.
-  // The icon reflects the EFFECTIVE backend — the environment variable when it
-  // is set (it wins for every process that inherits it), otherwise the
-  // settings.json value the toggle manages.
-  function envBedrockPin() { return process.env.CLAUDE_CODE_USE_BEDROCK; }
-  function effectiveBedrockOn() {
-    const v = envBedrockPin();
-    if (v !== undefined) return v !== '0' && v !== 'false';
-    return settingsBedrockOn();
-  }
-
+  // The icon reflects the backend a NEW Claude Code session will use:
+  // the settings.json value when present (Claude Code applies it over the
+  // process environment), otherwise an exported CLAUDE_CODE_USE_BEDROCK.
   function updateToggle() {
-    const pinned = envBedrockPin() !== undefined;
-    const pinNote = pinned
-      ? '\n\n$(pinned) Pinned by `CLAUDE_CODE_USE_BEDROCK=' + envBedrockPin() + '` in this machine\'s environment (e.g. `~/.bashrc`) — the toggle cannot override it; change or unset that export to switch.'
-      : '\n\nClick to switch for the next session. Running sessions keep their current auth.';
-    if (effectiveBedrockOn()) {
+    const envV = process.env.CLAUDE_CODE_USE_BEDROCK;
+    const envNote = (envV !== undefined && settingsBedrockValue() === undefined)
+      ? '\n\nCurrently following `CLAUDE_CODE_USE_BEDROCK=' + envV + '` from this machine\'s environment (e.g. `~/.bashrc`); toggling writes `~/.claude/settings.json`, which Claude Code applies over the environment.'
+      : '';
+    const clickNote = '\n\nClick to switch for the next session. Running sessions keep their current auth.';
+    if (bedrockConfigured()) {
       if (apiCredentialsPresent()) {
         toggle.text = '$(cloud) API';
         toggle.backgroundColor = undefined;
         toggle.tooltip = new vscode.MarkdownString(
-          'Claude Code backend: **API / Bedrock**.' + pinNote);
+          'Claude Code backend: **API / Bedrock**.' + clickNote + envNote);
       } else {
         // API selected but nothing to authenticate with — keep the item in a
         // warning state so the broken configuration stays visible, not just a toast.
         toggle.text = '$(cloud) API $(warning)';
         toggle.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         toggle.tooltip = new vscode.MarkdownString(
-          '⚠ Claude Code backend: **API / Bedrock**, but **no credentials were found** on this machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`) — the next Claude Code session may fail to authenticate.' + pinNote);
+          '⚠ Claude Code backend: **API / Bedrock**, but **no credentials were found** on this machine (no `~/.aws` credentials, `AWS_*` variables, or `ANTHROPIC_API_KEY`) — the next Claude Code session may fail to authenticate.' + clickNote + envNote);
       }
     } else {
       toggle.text = '$(account) sub';
       toggle.backgroundColor = undefined;
       toggle.tooltip = new vscode.MarkdownString(
-        'Claude Code backend: **subscription (login)**.' + pinNote);
+        'Claude Code backend: **subscription (login)**.' + clickNote + envNote);
     }
   }
 
@@ -625,14 +623,7 @@ function activate(context) {
       // Switch the Claude Code auth backend for the NEXT session by flipping
       // env.CLAUDE_CODE_USE_BEDROCK in ~/.claude/settings.json. Running sessions
       // keep their auth; a new `claude` session reads the new value.
-      if (envBedrockPin() !== undefined) {
-        vscode.window.showWarningMessage(
-          'Claude Code backend is pinned to ' + (effectiveBedrockOn() ? 'API / Bedrock' : 'subscription') +
-          ' by CLAUDE_CODE_USE_BEDROCK=' + envBedrockPin() + ' in this machine\'s environment (e.g. ~/.bashrc). ' +
-          'The toggle cannot override it — change or unset that export (then restart the VS Code server) to switch.');
-        return;
-      }
-      const on = settingsBedrockOn();
+      const on = bedrockConfigured();
       if (!on && !apiCredentialsPresent()) {
         // About to select API/Bedrock with nothing to authenticate with —
         // confirm via a modal so the problem can't be missed or buried.
