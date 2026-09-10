@@ -1,8 +1,8 @@
 {
   "name": "ai-meter",
   "displayName": "AI Meter",
-  "description": "Claude usage in the status bar — subscription limits (5-hour session, weekly), or session tokens and estimated cost for Bedrock/API setups.",
-  "version": "0.3.2",
+  "description": "Claude usage in the status bar \u2014 subscription limits (5-hour session, weekly), or session tokens and estimated cost for Bedrock/API setups.",
+  "version": "0.3.3",
   "publisher": "seanahn",
   "license": "MIT",
   "repository": {
@@ -40,6 +40,10 @@
       {
         "command": "aiMeter.toggleMode",
         "title": "AI Meter: Switch Claude Code Backend (Subscription / API)"
+      },
+      {
+        "command": "aiMeter.login",
+        "title": "AI Meter: Log in to Claude (subscription)"
       }
     ],
     "configuration": {

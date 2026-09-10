@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- New **AI Meter: Log in to Claude (subscription)** command: opens a terminal running `claude /login` with `CLAUDE_CODE_USE_BEDROCK=0`, so login works even on machines whose shell environment pins Claude Code to Bedrock.
+- Switching to subscription on a machine with no stored login now offers a **Log In** button on the toast, and the meter's no-credentials tooltip carries a clickable **Log in to Claude** link.
+
 ## 0.3.2
 
 - Switching to API/Bedrock on a machine with no credentials now asks for confirmation in a modal dialog (Switch Anyway / Cancel) instead of only toasting after the fact.

@@ -470,10 +470,12 @@ function activate(context) {
       if (lastError === 'no-credentials' && c.get('hideWhenUnavailable')) { hide(); return; }
       item.text = '$(dashboard) —';
       item.backgroundColor = undefined;
-      item.tooltip = new vscode.MarkdownString(
-        lastError === 'no-credentials' ? 'AI Meter: no Claude credentials found (`~/.claude/.credentials.json`). Log in with Claude Code first. (Using Bedrock? Set `aiMeter.mode` to `cost`.)'
-        : lastError === 'token-expired' ? 'AI Meter: Claude OAuth token expired — run Claude Code once to refresh it.'
+      const md = new vscode.MarkdownString(
+        lastError === 'no-credentials' ? 'AI Meter: no Claude credentials found (`~/.claude/.credentials.json`) — this machine has not logged in to a Claude subscription.\n\n[**Log in to Claude**](command:aiMeter.login) (opens a terminal running `claude /login`)\n\n(Using Bedrock/API instead? Click the backend toggle or set `aiMeter.mode` to `cost`.)'
+        : lastError === 'token-expired' ? 'AI Meter: Claude OAuth token expired — run Claude Code once to refresh it, or [log in again](command:aiMeter.login).'
         : 'AI Meter: usage unavailable' + (lastError ? ' (' + lastError + ')' : '') + '. Click to retry.');
+      md.isTrusted = true;
+      item.tooltip = md;
       show();
       return;
     }
@@ -617,9 +619,27 @@ function activate(context) {
       if (process.env.CLAUDE_CODE_USE_BEDROCK !== undefined) {
         msg += ' Note: CLAUDE_CODE_USE_BEDROCK is also set in this machine\'s environment (e.g. ~/.bashrc), which overrides this setting in shells that export it.';
       }
-      vscode.window.showInformationMessage(msg);
+      if (on && !readCredentials()) {
+        // Switched to subscription on a machine that has never logged in —
+        // offer the login flow directly instead of waiting for Claude Code to ask.
+        vscode.window.showInformationMessage(
+          msg + ' This machine has no subscription login yet.', 'Log In'
+        ).then(pick => { if (pick === 'Log In') vscode.commands.executeCommand('aiMeter.login'); });
+      } else {
+        vscode.window.showInformationMessage(msg);
+      }
       updateToggle();
       poll(); // AI Meter display follows when aiMeter.mode is "auto"
+    }),
+    vscode.commands.registerCommand('aiMeter.login', () => {
+      // Run the Claude Code OAuth login in a terminal, with Bedrock forced off so
+      // an exported CLAUDE_CODE_USE_BEDROCK=1 (e.g. from ~/.bashrc on a pod)
+      // cannot keep `claude` in Bedrock mode and skip the login flow. The
+      // credentials watcher picks up ~/.claude/.credentials.json when it lands.
+      log('open login terminal (claude /login)');
+      const term = vscode.window.createTerminal({ name: 'Claude login', env: { CLAUDE_CODE_USE_BEDROCK: '0' } });
+      term.show();
+      term.sendText('claude /login');
     }),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('aiMeter')) return;
