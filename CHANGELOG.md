@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6
+
+- The login command now opens the Claude Code panel's graphical login page (Claude.ai Subscription / Anthropic Console / Bedrock) when the Claude Code extension is installed; the terminal `claude /login` flow remains as the fallback.
+
 ## 0.3.5
 
 - The login command marks CLI onboarding as completed (`~/.claude.json`) before running `claude /login`, so first-time logins start at the login step instead of the theme-picker sample-diff screen. An existing theme choice is never overridden, and the CLI's folder-trust safety prompt is left in place.

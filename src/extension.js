@@ -648,10 +648,22 @@ function activate(context) {
       updateToggle();
       poll(); // AI Meter display follows when aiMeter.mode is "auto"
     }),
-    vscode.commands.registerCommand('aiMeter.login', () => {
-      // Run the Claude Code OAuth login in a terminal, with Bedrock forced off so
-      // an exported CLAUDE_CODE_USE_BEDROCK=1 (e.g. from ~/.bashrc on a pod)
-      // cannot keep `claude` in Bedrock mode and skip the login flow. The
+    vscode.commands.registerCommand('aiMeter.login', async () => {
+      // Preferred: open the Claude Code panel — when logged out it shows its
+      // graphical login page (Claude.ai Subscription / Anthropic Console /
+      // Bedrock), with no CLI onboarding steps in the way.
+      if (vscode.extensions.getExtension('anthropic.claude-code')) {
+        for (const cmd of ['claude-vscode.editor.openLast', 'claude-vscode.sidebar.open']) {
+          try {
+            await vscode.commands.executeCommand(cmd);
+            log('opened Claude Code panel for login (' + cmd + ')');
+            return;
+          } catch (_) { /* try the next command, then the terminal fallback */ }
+        }
+      }
+      // Fallback (no Claude Code extension): run the CLI login in a terminal,
+      // with Bedrock forced off so an exported CLAUDE_CODE_USE_BEDROCK=1 (e.g.
+      // from ~/.bashrc on a pod) cannot keep `claude` in Bedrock mode. The
       // credentials watcher picks up ~/.claude/.credentials.json when it lands.
       const bin = findClaudeBinary();
       if (!bin) {
